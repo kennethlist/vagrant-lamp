@@ -92,6 +92,11 @@ install_php() {
   sed -i "s/display_startup_errors = Off/display_startup_errors = On/g" ${PHP_CONFIG_FILE}
   sed -i "s/display_errors = Off/display_errors = On/g" ${PHP_CONFIG_FILE}
 
+  sed -i "s/error_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT/error_reporting = E_ALL/g" ${PHP_CONFIG_FILE}
+  sed -i "s/session.gc_maxlifetime = 1440/session.gc_maxlifetime = 36000/g" ${PHP_CONFIG_FILE}
+   
+  apt-get -y install graphviz # dep for webgrind
+
   if [ ! -f "{$XDEBUG_CONFIG_FILE}" ]; then
     cat << EOF > ${XDEBUG_CONFIG_FILE}
 zend_extension=xdebug.so
@@ -99,6 +104,8 @@ xdebug.remote_enable=1
 xdebug.remote_connect_back=1
 xdebug.remote_port=9000
 xdebug.remote_host=10.0.2.2
+xdebug.profiler_enable_trigger=1;
+xdebug.profiler_output_dir=/tmp
 EOF
   fi
 
@@ -128,6 +135,8 @@ install_mysql() {
   echo "phpmyadmin phpmyadmin/mysql/app-pass password $DBPASSWD" | debconf-set-selections
   echo "phpmyadmin phpmyadmin/reconfigure-webserver multiselect none" | debconf-set-selections
   apt-get -y install mysql-client mysql-server phpmyadmin
+
+  echo "\$cfg['LoginCookieValidity'] = 36000;" >> /etc/phpmyadmin/config.inc.php
   
   mysql -uroot -p$DBPASSWD -e "CREATE DATABASE $DBNAME"
   mysql -uroot -p$DBPASSWD -e "grant all privileges on $DBNAME.* to '$DBUSER'@'localhost' identified by '$DBPASSWD'"
@@ -161,7 +170,7 @@ install_mailhog() {
   # echo "GOPATH=\$HOME/go" >> ${USER_HOME}/.bashrc
   # echo "PATH=\$PATH:\$GOROOT/bin:\$GOPATH/bin" >> ${USER_HOME}/.bashrc
   sudo su - vagrant /bin/bash -c "export GOPATH=\$HOME/go; export PATH=\$PATH:\$GOROOT/bin:\$GOPATH/bin; go get github.com/mailhog/mhsendmail"
-  echo "sendmail_path = /home/vagrant/go/bin/mhsendmail" >> /etc/php5/apache2/php.ini 
+  echo "sendmail_path = /home/vagrant/go/bin/mhsendmail" >> PHP_CONFIG_FILE
   
   # Download binary from github
   sudo su - vagrant -c "wget --quiet -O ~/mailhog https://github.com/mailhog/MailHog/releases/download/v0.1.8/MailHog_linux_amd64 && chmod +x ~/mailhog"
