@@ -2,8 +2,8 @@
 
 APACHE_CONFIG_FILE="/etc/apache2/envvars"
 APACHE_VHOST_FILE="/etc/apache2/sites-available/vagrant_vhost.conf"
-PHP_CONFIG_FILE="/etc/php5/apache2/php.ini"
-XDEBUG_CONFIG_FILE="/etc/php5/mods-available/xdebug.ini"
+PHP_CONFIG_FILE="/etc/php/7.0/apache2/php.ini"
+XDEBUG_CONFIG_FILE="/etc/php/7.0/mods-available/xdebug.ini"
 MYSQL_CONFIG_FILE="/etc/mysql/my.cnf"
 DEFAULT_APACHE_INDEX="/var/www/html/index.html"
 PROJECT_WEB_ROOT="www"
@@ -16,7 +16,6 @@ DBPASSWD="vagrant"
 # This function is called at the very bottom of the file
 main() {
   echo "Seting up environment. This may take a few minutes..."
-  setup_network
   perform_update
   install_core_components
   install_apache
@@ -38,12 +37,6 @@ cleanup() {
   apt-get -y autoremove
 }
 
-setup_network() {
-  IPADDR=$(/sbin/ifconfig eth0 | awk '/inet / { print $2 }' | sed 's/addr://')
-  sed -i "s/^${IPADDR}.*//" /etc/hosts
-  echo ${IPADDR} ubuntu.localhost >> /etc/hosts      # Just to quiet down some error messages
-}
-
 install_core_components() {
   echo "Installing core components..."
   # Install basic tools
@@ -55,8 +48,8 @@ install_apache() {
   echo "Installing Apache..."
   apt-get -y install apache2
 
-  sed -i "s/^\(.*\)www-data/\1vagrant/g" ${APACHE_CONFIG_FILE}
-  chown -R vagrant:vagrant /var/log/apache2
+  sed -i "s/^\(.*\)www-data/\1ubuntu/g" ${APACHE_CONFIG_FILE}
+  chown -R ubuntu:ubuntu /var/log/apache2
 
   if [ ! -f "${APACHE_VHOST_FILE}" ]; then
     cat << EOF > ${APACHE_VHOST_FILE}
@@ -81,18 +74,18 @@ EOF
 
   a2enmod rewrite
 
-  service apache2 reload
-  update-rc.d apache2 enable
+  systemctl enable apache2
+  systemctl reload apache2
 }
 
 install_php() {
   echo "Installing PHP..."
-  apt-get -y install php5 php5-curl php5-mysql php5-sqlite php5-xdebug php-pear php5-cli
+  apt-get -y install php php-gd php-mysql php-mcrypt php-curl php-intl php7.0-xsl php-mbstring php-zip php-bcmath php-xdebug php-soap
 
   sed -i "s/display_startup_errors = Off/display_startup_errors = On/g" ${PHP_CONFIG_FILE}
   sed -i "s/display_errors = Off/display_errors = On/g" ${PHP_CONFIG_FILE}
 
-  sed -i "s/error_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT/error_reporting = E_ALL/g" ${PHP_CONFIG_FILE}
+  # sed -i "s/error_reporting = E_ALL & ~E_DEPRECATED & ~E_STRICT/error_reporting = E_ALL/g" ${PHP_CONFIG_FILE}
   sed -i "s/session.gc_maxlifetime = 1440/session.gc_maxlifetime = 36000/g" ${PHP_CONFIG_FILE}
    
   apt-get -y install graphviz # dep for webgrind
@@ -109,7 +102,7 @@ xdebug.profiler_output_dir=/tmp
 EOF
   fi
 
-  service apache2 reload
+  systemctl reload apache2
 
   # Install latest version of Composer globally
   if [ ! -f "/usr/local/bin/composer" ]; then
@@ -159,8 +152,7 @@ install_mysql() {
   #   done
   # fi
 
-  service mysql restart
-  update-rc.d apache2 enable
+  systemctl restart mysql
 }
 
 
@@ -169,24 +161,30 @@ install_mailhog() {
   apt-get -y install golang
   # echo "GOPATH=\$HOME/go" >> ${USER_HOME}/.bashrc
   # echo "PATH=\$PATH:\$GOROOT/bin:\$GOPATH/bin" >> ${USER_HOME}/.bashrc
-  sudo su - vagrant /bin/bash -c "export GOPATH=\$HOME/go; export PATH=\$PATH:\$GOROOT/bin:\$GOPATH/bin; go get github.com/mailhog/mhsendmail"
-  echo "sendmail_path = /home/vagrant/go/bin/mhsendmail" >> PHP_CONFIG_FILE
+  sudo su - ubuntu /bin/bash -c "export GOPATH=\$HOME/go; export PATH=\$PATH:\$GOROOT/bin:\$GOPATH/bin; go get github.com/mailhog/mhsendmail"
+  echo "sendmail_path = /home/ubuntu/go/bin/mhsendmail" >> ${PHP_CONFIG_FILE}
   
   # Download binary from github
-  sudo su - vagrant -c "wget --quiet -O ~/mailhog https://github.com/mailhog/MailHog/releases/download/v0.1.8/MailHog_linux_amd64 && chmod +x ~/mailhog"
+  sudo su - ubuntu -c "wget --quiet -O ~/mailhog https://github.com/mailhog/MailHog/releases/download/v0.1.8/MailHog_linux_amd64 && chmod +x ~/mailhog"
     
   # Make it start on reboot
-  sudo tee /etc/init/mailhog.conf <<EOL
-description "Mailhog"
-start on runlevel [2345]
-stop on runlevel [!2345]
-respawn
-pre-start script
-    exec su - vagrant -c "/usr/bin/env ~/mailhog > /dev/null 2>&1 &"
-end script
+  tee /etc/systemd/system/mailhog.service <<EOL
+[Unit]
+Description=MailHog Service
+After=network.service vagrant.mount
+[Service]
+Type=simple
+ExecStart=/usr/bin/env /home/ubuntu/mailhog > /dev/null 2>&1 &
+[Install]
+WantedBy=multi-user.target
 EOL
-  
-  service mailhog start
+
+  # Start on reboot
+  systemctl enable mailhog
+
+  # Start background service now
+  systemctl start mailhog
+
   service apache2 restart
 }
 

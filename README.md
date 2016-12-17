@@ -21,10 +21,10 @@ Password: vagrant
 
 Technical Details
 -----------------
-* Ubuntu 14.04 64-bit
+* Ubuntu 16.04 64-bit
 * Apache 2.4
-* PHP 5.5
-* MySQL 5.5
+* PHP 7.0
+* MySQL 5.7
 * XDebug
 * Composer
 * MailHog
